@@ -21,9 +21,13 @@ certificatesResolvers:
     acme:
       email: 'jangeador@gmail.com'
       storage: /etc/traefik/acme/acme.json
-      # https://doc.traefik.io/traefik/https/acme/#httpchallenge
-      httpChallenge:
-        entryPoint: web
+      # dns challenge
+      dnsChallenge:
+        provider: cloudflare
+        delayBeforeCheck: 0
+        resolvers:
+          - '1.1.1.1:53'
+          - '8.8.8.8:53'
 
 http:
   routers:
