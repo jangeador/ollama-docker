@@ -72,6 +72,8 @@ services:
     ports:
       - "0.0.0.0:80:80"
       - "0.0.0.0:443:443"
+    networks:
+      - ollama-docker
 
 networks:
   ollama-docker:
