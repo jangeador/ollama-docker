@@ -1,0 +1,93 @@
+version: "3.8"
+
+volumes:
+  production_traefik: {}
+
+services:
+  app:
+    build: .
+    ports:
+      - 8000:8000
+      - 5678:5678
+    volumes:
+      - .:/code
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: always
+    depends_on:
+      - ollama
+      - ollama-webui
+    networks:
+      - ollama-docker
+
+  ollama:
+    image: ollama/ollama:latest
+    # Removed public port 11434:11434 (Traefik handles routing)
+    volumes:
+      - .:/code
+      - ./ollama/ollama:/root/.ollama
+    container_name: ollama
+    pull_policy: always
+    tty: true
+    restart: always
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+      - OLLAMA_HOST=0.0.0.0
+    labels:  # Added Traefik labels
+      - traefik.enable=true
+      - traefik.http.routers.ollama.rule=Host(`jarvis.gesd32.net`)
+      - traefik.http.routers.ollama.entrypoints=web-secure
+      - traefik.http.routers.ollama.tls.certresolver=letsencrypt
+      - traefik.http.services.ollama.loadbalancer.server.port=11434
+    networks:
+      - ollama-docker
+
+  ollama-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: ollama-webui
+    volumes:
+      - ./ollama/ollama-webui:/app/backend/data
+    depends_on:
+      - ollama
+    ports:
+      - 8080:8080
+    environment:
+      - OLLAMA_BASE_URLS=http://host.docker.internal:7869
+      - ENV=dev
+      - WEBUI_AUTH=False
+      - WEBUI_NAME=valiantlynx AI
+      - WEBUI_URL=http://localhost:8080
+      - WEBUI_SECRET_KEY=t0p-s3cr3t
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    restart: unless-stopped
+    networks:
+      - ollama-docker
+
+  traefik:
+    build:
+      context: .
+      dockerfile: ./compose/traefik/Dockerfile
+    image: gesdnet_production_traefik
+    depends_on:
+      - ollama
+    volumes:
+      - production_traefik:/etc/traefik/acme:z
+      - /var/run/docker.sock:/var/run/docker.sock  # Added Docker socket
+    env_file:
+      - ./.envs/.traefik  # Ensure CF_API_EMAIL and CF_API_KEY are here
+    command:  # Added command args
+      - --providers.docker=true
+      - --entrypoints.web.address=:80
+      - --entrypoints.web-secure.address=:443
+      - --certificatesresolvers.letsencrypt.acme.dnschallenge.provider=cloudflare
+      - --certificatesresolvers.letsencrypt.acme.email=myemail@gmail.com
+      - --certificatesresolvers.letsencrypt.acme.storage=/etc/traefik/acme/acme.json
+    ports:
+      - "0.0.0.0:80:80"
+      - "0.0.0.0:443:443"
+    networks:
+      - ollama-docker
+
+networks:
+  ollama-docker:
+    external: false
